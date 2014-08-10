@@ -19,8 +19,14 @@ obj-$(CONFIG_PHANTOM)		+= phantom.o
 obj-$(CONFIG_SENSORS_BH1780)	+= bh1780gli.o
 obj-$(CONFIG_SENSORS_BH1770)	+= bh1770glc.o
 obj-$(CONFIG_SENSORS_APDS990X)	+= apds990x.o
+ifeq ($(ANDROID_U8500_PMEM),y)
+	obj-$(CONFIG_ANDROID_PMEM)	+= pmem_u8500.o
+else
+obj-$(CONFIG_ANDROID_PMEM)	+= pmem.o
+endif
 obj-$(CONFIG_SGI_IOC4)		+= ioc4.o
 obj-$(CONFIG_ENCLOSURE_SERVICES) += enclosure.o
+obj-$(CONFIG_KERNEL_DEBUGGER_CORE)	+= kernel_debugger.o
 obj-$(CONFIG_KGDB_TESTS)	+= kgdbts.o
 obj-$(CONFIG_SGI_XP)		+= sgi-xp/
 obj-$(CONFIG_SGI_GRU)		+= sgi-gru/
@@ -51,4 +57,19 @@ obj-$(CONFIG_USB_SWITCH_FSA9480) += fsa9480.o
 obj-$(CONFIG_ALTERA_STAPL)	+=altera-stapl/
 obj-$(CONFIG_MAX8997_MUIC)	+= max8997-muic.o
 obj-$(CONFIG_WL127X_RFKILL)	+= wl127x-rfkill.o
+obj-$(CONFIG_APANIC)		+= apanic.o
 obj-$(CONFIG_SENSORS_AK8975)	+= akm8975.o
+obj-$(CONFIG_STM_TRACE) 	+= stm.o
+obj-$(CONFIG_STE_TRACE_MODEM) 	+= db8500-modem-trace.o
+obj-$(CONFIG_LM3560)		+= lm3560.o
+obj-$(CONFIG_LM3561)		+= lm3561.o
+obj-$(CONFIG_DBX500_MLOADER) 	+= dbx500-mloader.o
+obj-$(CONFIG_HWMEM)             += hwmem/
+obj-$(CONFIG_DISPDEV)		+= dispdev/
+obj-$(CONFIG_COMPDEV)		+= compdev/
+obj-$(CONFIG_CLONEDEV)		+= clonedev/
+obj-$(CONFIG_U5500_MBOX)	+= mbox.o mbox_channels-db5500.o
+obj-$(CONFIG_U8500_SIM_DETECT)	+= sim_detect.o
+obj-y				+= modem_audio/
+obj-$(CONFIG_NFC_PN544)         += pn544.o
+obj-$(CONFIG_KEXEC_MODULE)	+= kexec_mod/
