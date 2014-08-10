@@ -31,7 +31,8 @@ static void rtc_device_release(struct device *dev)
 	kfree(rtc);
 }
 
-#if defined(CONFIG_PM) && defined(CONFIG_RTC_HCTOSYS_DEVICE)
+#if defined(CONFIG_PM) && defined(CONFIG_RTC_HCTOSYS_DEVICE) && \
+	!defined(CONFIG_CLKSRC_DBX500_PRCMU)
 
 /*
  * On suspend(), measure the delta between one RTC and the

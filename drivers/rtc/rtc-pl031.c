@@ -220,17 +220,9 @@ static irqreturn_t pl031_interrupt(int irq, void *dev_id)
 	unsigned long events = 0;
 
 	rtcmis = readl(ldata->base + RTC_MIS);
-	if (rtcmis) {
-		writel(rtcmis, ldata->base + RTC_ICR);
-
-		if (rtcmis & RTC_BIT_AI)
-			events |= (RTC_AF | RTC_IRQF);
-
-		/* Timer interrupt is only available in ST variants */
-		if ((rtcmis & RTC_BIT_PI) &&
-			(ldata->hw_designer == AMBA_VENDOR_ST))
-			events |= (RTC_PF | RTC_IRQF);
-
+	if (rtcmis & RTC_BIT_AI) {
+		writel(RTC_BIT_AI, ldata->base + RTC_ICR);
+		events |= (RTC_AF | RTC_IRQF);
 		rtc_update_irq(ldata->rtc, 1, events);
 
 		return IRQ_HANDLED;
@@ -369,7 +361,8 @@ static int pl031_probe(struct amba_device *adev, const struct amba_id *id)
 	}
 
 	if (request_irq(adev->irq[0], pl031_interrupt,
-			0, "rtc-pl031", ldata)) {
+			IRQF_SHARED | IRQF_NO_SUSPEND,
+			"rtc-pl031", ldata)) {
 		ret = -EIO;
 		goto out_no_irq;
 	}
