@@ -457,6 +457,9 @@ not_relocated:	mov	r0, #0
 		mov	r3, r7
 		bl	decompress_kernel
 		bl	cache_clean_flush
+#ifdef CONFIG_OUTER_CACHE
+		bl      inv_outercache_all_ways
+#endif
 		bl	cache_off
 		mov	r0, #0			@ must be zero
 		mov	r1, r7			@ restore architecture number
@@ -482,6 +485,27 @@ params:		ldr	r0, =0x10000100		@ params_phys for RPC
 		mov	pc, lr
 		.ltorg
 		.align
+#endif
+
+#ifdef CONFIG_OUTER_CACHE
+#ifdef CONFIG_ARCH_U8500
+#define PL310_INV_ALL_WAYS 0xA04127FC
+/* Invalidate all ways of L2 cache PL310 */
+		.align  5
+inv_outercache_all_ways:
+		mov r2, #0xFF                   @ clean & invalidate L2 cache
+		ldr r1, =PL310_INV_ALL_WAYS
+		str r2, [r1]
+outer_cache_loop:
+		ldr r2, [r1]
+		teq r2, #0
+		bne outer_cache_loop
+		mov pc, lr
+#else
+		.align  5
+inv_outercache_all_ways:
+		mov pc, lr
+#endif
 #endif
 
 /*
