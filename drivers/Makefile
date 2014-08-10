@@ -126,6 +126,8 @@ obj-y				+= clk/
 obj-$(CONFIG_MODEM)		+= modem/
 
 obj-$(CONFIG_HWSPINLOCK)	+= hwspinlock/
+obj-$(CONFIG_SEMC_RMI4_BUS)     += rmi4/
+
 obj-$(CONFIG_NFC)		+= nfc/
 obj-$(CONFIG_IOMMU_SUPPORT)	+= iommu/
 obj-$(CONFIG_REMOTEPROC)	+= remoteproc/

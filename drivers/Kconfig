@@ -144,4 +144,5 @@ source "drivers/devfreq/Kconfig"
 
 source "drivers/modem/Kconfig"
 
+source "drivers/rmi4/Kconfig"
 endmenu
