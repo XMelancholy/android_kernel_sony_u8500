@@ -99,6 +99,7 @@ obj-$(CONFIG_CPU_FREQ)		+= cpufreq/
 obj-$(CONFIG_CPU_IDLE)		+= cpuidle/
 obj-y				+= mmc/
 obj-$(CONFIG_MEMSTICK)		+= memstick/
+obj-$(CONFIG_MODEM)		+= modem/
 obj-y				+= leds/
 obj-$(CONFIG_SWITCH)		+= switch/
 obj-$(CONFIG_INFINIBAND)	+= infiniband/
@@ -123,7 +124,7 @@ obj-y				+= platform/
 obj-y				+= ieee802154/
 #common clk code
 obj-y				+= clk/
-obj-$(CONFIG_MODEM)		+= modem/
+obj-$(CONFIG_TEE_SUPPORT)	+= tee/
 
 obj-$(CONFIG_HWSPINLOCK)	+= hwspinlock/
 obj-$(CONFIG_SEMC_RMI4_BUS)     += rmi4/
