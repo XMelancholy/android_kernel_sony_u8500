@@ -30,6 +30,8 @@
 
 /* big enough to hold our biggest descriptor */
 #define USB_BUFSIZ	1024
+#define USB_DT_OTG_SIZE 5
+
 
 static struct usb_composite_driver *composite;
 static int (*composite_gadget_bind)(struct usb_composite_dev *cdev);
@@ -349,6 +351,19 @@ int usb_interface_id(struct usb_configuration *config,
 	return -ENODEV;
 }
 
+static int otg_buf(struct usb_configuration *config,
+		void *buf, u8 type)
+{
+	void *next = buf;
+	int status;
+
+	status = usb_descriptor_fillbuf(next, USB_DT_OTG_SIZE,
+					config->descriptors);
+	if (status < 0)
+		return status;
+	return USB_DT_OTG_SIZE;
+}
+
 static int config_buf(struct usb_configuration *config,
 		enum usb_device_speed speed, void *buf, u8 type)
 {
@@ -407,6 +422,17 @@ static int config_buf(struct usb_configuration *config,
 	len = next - buf;
 	c->wTotalLength = cpu_to_le16(len);
 	return len;
+}
+
+static int otg_descp(struct usb_composite_dev *cdev, unsigned w_value)
+{
+	struct usb_configuration	*c;
+	u8		type = w_value >> 8;
+	w_value &= 0xff;
+	list_for_each_entry(c, &cdev->configs, list)
+		return otg_buf(c, cdev->req->buf, type);
+
+	return -EINVAL;
 }
 
 static int config_desc(struct usb_composite_dev *cdev, unsigned w_value)
@@ -1144,6 +1170,12 @@ composite_setup(struct usb_gadget *gadget, const struct usb_ctrlrequest *ctrl)
 				value = min(w_length, (u16) value);
 			}
 			break;
+#ifdef CONFIG_USB_OTG_20
+		case USB_DT_OTG:
+			value = otg_descp(cdev, w_value);
+			value = min(w_length, (u16) value);
+			break;
+#endif
 		}
 		break;
 

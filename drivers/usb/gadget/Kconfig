@@ -855,6 +855,22 @@ config USB_G_ANDROID
 	  Each function can be configured and enabled/disabled
 	  dynamically from userspace through a sysfs interface.
 
+config USB_ANDROID_GG
+	boolean "GordonsGate driver"
+	depends on USB_G_ANDROID
+	default n
+	help
+	  Enabling this option adds GordonsGate support to the
+	  android gadget.
+
+config USB_ANDROID_PHONET
+	boolean "Android Phonet function"
+	depends on USB_G_ANDROID
+	depends on PHONET
+	help
+	  Provides Phonet Protocol support for android gadget
+	  driver.
+
 config USB_CDC_COMPOSITE
 	tristate "CDC Composite Device (Ethernet and ACM)"
 	depends on NET
@@ -985,5 +1001,16 @@ config USB_G_WEBCAM
 	  dynamically linked module called "g_webcam".
 
 endchoice
+
+config USB_OTG_20
+	bool "OTG 2.0 USB SUPPORT"
+	select USB_OTG
+	select PM_RUNTIME
+	select USB_OTG_WHITELIST
+	select USB_SUSPEND
+	default n
+	help
+	Enabling the whitelist (Target Peripheral List-TPL) and runtime power
+	management at system level and usb level for OTG 2.0.
 
 endif # USB_GADGET

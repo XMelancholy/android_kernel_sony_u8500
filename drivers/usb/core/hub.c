@@ -30,6 +30,12 @@
 
 #include "usb.h"
 
+#ifdef CONFIG_ARCH_U8500
+#define MAX_TOPO_LEVEL_U8500 2
+#define MAX_USB_DEVICE_U8500 8
+int usb_device_count;
+#endif
+
 /* if we are in debug mode, always announce new devices */
 #ifdef DEBUG
 #ifndef CONFIG_USB_ANNOUNCE_NEW_DEVICES
@@ -1326,11 +1332,20 @@ static int hub_probe(struct usb_interface *intf, const struct usb_device_id *id)
 	/* Hubs have proper suspend/resume support. */
 	usb_enable_autosuspend(hdev);
 
+#ifdef CONFIG_ARCH_U8500
+	if (hdev->level > MAX_TOPO_LEVEL_U8500) {
+		dev_err(&intf->dev,
+			"Unsupported bus topology: > %d "
+			" hub nesting\n", MAX_TOPO_LEVEL_U8500);
+		return -E2BIG;
+	}
+#else
 	if (hdev->level == MAX_TOPO_LEVEL) {
 		dev_err(&intf->dev,
 			"Unsupported bus topology: hub nested too deep\n");
 		return -E2BIG;
 	}
+#endif
 
 #ifdef	CONFIG_USB_OTG_BLACKLIST_HUB
 	if (hdev->parent) {
@@ -1612,12 +1627,14 @@ static void choose_devnum(struct usb_device *udev)
 		 * bus->devnum_next. */
 		devnum = find_next_zero_bit(bus->devmap.devicemap, 128,
 					    bus->devnum_next);
-		if (devnum >= 128)
+		/* Due to Hardware bugs we need to reserve a device address
+		 * for flushing of endpoints. */
+		if (devnum >= 127)
 			devnum = find_next_zero_bit(bus->devmap.devicemap,
 						    128, 1);
-		bus->devnum_next = ( devnum >= 127 ? 1 : devnum + 1);
+		bus->devnum_next = devnum >= 126 ? 1 : devnum + 1;
 	}
-	if (devnum < 128) {
+	if (devnum < 127) {
 		set_bit(devnum, bus->devmap.devicemap);
 		udev->devnum = devnum;
 	}
@@ -1676,6 +1693,12 @@ void usb_disconnect(struct usb_device **pdev)
 	dev_info(&udev->dev, "USB disconnect, device number %d\n",
 			udev->devnum);
 
+#ifdef CONFIG_USB_OTG_20
+	if (udev->bus->hnp_support && udev->portnum == udev->bus->otg_port) {
+		cancel_delayed_work_sync(&udev->bus->hnp_polling);
+		udev->bus->hnp_support = 0;
+	}
+#endif
 	usb_lock_device(udev);
 
 	/* Free up all the children before we remove this device */
@@ -1752,6 +1775,104 @@ static inline void announce_device(struct usb_device *udev) { }
  *
  * Finish enumeration for On-The-Go devices
  */
+
+#ifdef	CONFIG_USB_OTG_20
+static int usb_enumerate_device_otg(struct usb_device *udev)
+{
+	int err = 0;
+
+	/*
+	 * OTG-aware devices on OTG-capable root hubs may be able to use SRP,
+	 * to wake us after we've powered off VBUS; and HNP, switching roles
+	 * "host" to "peripheral".  The OTG descriptor helps figure this out.
+	 */
+	/* OTG 2.0 Compliance
+	 * For symmetry we should be able to do HNP polling even
+	 * when we are in B-Device mode, acting as a host.
+	 */
+	if (udev->config &&
+			udev->parent == udev->bus->root_hub) {
+		struct usb_otg_descriptor	*desc = NULL;
+		struct usb_bus			*bus = udev->bus;
+
+		/* OTG 2.0 Compliance:
+		 * We need to treat the test device specially
+		 */
+		u16 idVendor = le16_to_cpu(udev->descriptor.idVendor);
+		u16 idProduct = le16_to_cpu(udev->descriptor.idProduct);
+
+		/* descriptor may appear anywhere in config */
+		if (__usb_get_extra_descriptor (udev->rawdescriptors[0],
+					le16_to_cpu(udev->config[0].desc.wTotalLength),
+					USB_DT_OTG, (void **) &desc) == 0) {
+			if (desc->bmAttributes & USB_OTG_HNP) {
+				unsigned		port1 = udev->portnum;
+
+				dev_info(&udev->dev,
+					"Dual-Role OTG device on %sHNP port\n",
+					(port1 == bus->otg_port)
+						? "" : "non-");
+
+				if (port1 != bus->otg_port)
+					goto out;
+				bus->hnp_support = 1;
+
+				err = usb_control_msg(udev,
+					usb_sndctrlpipe(udev, 0),
+					USB_REQ_SET_FEATURE, 0,
+					USB_DEVICE_A_HNP_SUPPORT,
+					0, NULL, 0, USB_CTRL_SET_TIMEOUT);
+				if (err < 0) {
+					/* OTG MESSAGE: report errors here,
+					 * customize to match your product.
+					 */
+					dev_info(&udev->dev,
+						"can't set HNP mode: %d\n",
+						err);
+					bus->hnp_support = 0;
+				}
+			}
+		}
+		/* OTG 2.0 Compliance */
+		if (idVendor == USB_OTG_TEST_MODE_VID &&
+				idProduct == USB_OTG_PET_TEST_HNP &&
+				udev->bus->is_b_host){
+			/*
+			 * PET expects us to suspend within 100 ms
+			 * after we enumerate it as a device from
+			 * B_HOST state, so oblige
+			 */
+			schedule_delayed_work(&bus->hnp_suspend,
+					msecs_to_jiffies(THOST_REQ_SUSP));
+		}
+	}
+
+out:
+	if (!is_targeted(udev)) {
+		/* Maybe it can talk to us, though we can't talk to it.
+		 * (Includes HNP test device.)
+		 */
+		if (udev->bus->hnp_support) {
+			err = usb_port_suspend(udev, PMSG_SUSPEND);
+			if (err < 0)
+				dev_dbg(&udev->dev, "HNP fail, %d\n", err);
+		}
+	} else if (udev->bus->hnp_support &&
+			udev->portnum == udev->bus->otg_port) {
+		/* HNP polling is introduced in OTG supplement Rev 2.0
+		 * and older devices does not support. Work is not
+		 * re-armed if device returns STALL. B-Host also performs
+		 * HNP polling.
+		 */
+		schedule_delayed_work(&udev->bus->hnp_polling,
+			msecs_to_jiffies(THOST_REQ_POLL));
+	}
+//fail:
+	return err;
+}
+
+#else
+
 static int usb_enumerate_device_otg(struct usb_device *udev)
 {
 	int err = 0;
@@ -1821,6 +1942,7 @@ fail:
 	return err;
 }
 
+#endif
 
 /**
  * usb_enumerate_device - Read device configs/intfs/otg (usbcore-internal)
@@ -2476,6 +2598,21 @@ int usb_port_suspend(struct usb_device *udev, pm_message_t msg)
 		}
 	}
 
+#ifdef CONFIG_USB_OTG_20
+	if (!udev->bus->is_b_host && udev->bus->hnp_support &&
+		udev->portnum == udev->bus->otg_port) {
+		status = usb_control_msg(udev, usb_sndctrlpipe(udev, 0),
+					USB_REQ_SET_FEATURE, 0,
+					USB_DEVICE_B_HNP_ENABLE,
+					0, NULL, 0, USB_CTRL_SET_TIMEOUT);
+		if (status < 0)
+			dev_dbg(&udev->dev, "can't enable HNP on port %d, "
+					"status %d\n", port1, status);
+		else
+			udev->bus->b_hnp_enable = 1;
+		}
+#endif
+
 	/* disable USB2 hardware LPM */
 	if (udev->usb2_hw_lpm_enabled == 1)
 		usb_set_usb2_hardware_lpm(udev, 0);
@@ -2633,6 +2770,12 @@ int usb_port_resume(struct usb_device *udev, pm_message_t msg)
 	int		port1 = udev->portnum;
 	int		status;
 	u16		portchange, portstatus;
+
+#ifdef CONFIG_USB_OTG_20
+		if (!udev->bus->is_b_host && udev->bus->hnp_support &&
+					udev->portnum == udev->bus->otg_port)
+			udev->bus->b_hnp_enable = 0;
+#endif
 
 	/* Skip the initial Clear-Suspend step for a remote wakeup */
 	status = hub_port_status(hub, port1, &portstatus, &portchange);
@@ -3425,6 +3568,22 @@ static void hub_port_connect_change(struct usb_hub *hub, int port1,
 			goto loop;
 		}
 
+#ifdef CONFIG_ARCH_U8500
+		if (hdev->parent == NULL)
+				usb_device_count = 1;
+
+		if (usb_device_count > MAX_USB_DEVICE_U8500) {
+
+				dev_err(&udev->dev,
+					"device connected is more than %d\n",
+					MAX_USB_DEVICE_U8500);
+
+				status = -ENOTCONN;     /* Don't retry */
+				goto loop;
+		}
+#endif
+
+
 		/* reset (non-USB 3.0 devices) and get descriptor */
 		status = hub_port_init(hub, udev, port1, i);
 		if (status < 0)
@@ -3505,6 +3664,117 @@ static void hub_port_connect_change(struct usb_hub *hub, int port1,
 		if (status)
 			dev_dbg(hub_dev, "%dmA power budget left\n", status);
 
+#ifdef CONFIG_USB_OTG_20
+		/* descriptor may appear anywhere in config */
+		__usb_get_extra_descriptor(udev->rawdescriptors[0],
+				le16_to_cpu(udev->config[0].desc.wTotalLength),
+				USB_DT_OTG, (void **) &desc);
+
+		ret = usb_control_msg(udev,
+			usb_sndctrlpipe(udev, 0),
+			USB_REQ_SET_FEATURE, 0,
+				USB_DEVICE_B_HNP_ENABLE,
+			0, NULL, 0, USB_CTRL_SET_TIMEOUT);
+		if (ret < 0)
+			dev_dbg(hub_dev, "set feature error\n");
+
+		idVendor = le16_to_cpu(udev->descriptor.idVendor);
+		if (idVendor == USB_OTG_TEST_MODE_VID) {
+			u16 wValue, typeReq, wIndex;
+			u32 set_feature = 0;
+			int err = 0;
+			struct usb_hcd *hcd = bus_to_hcd(udev->bus);
+			u16 idProduct = le16_to_cpu(
+					udev->descriptor.idProduct);
+			/* Convert the Test Mode Request
+			 * to control request
+			 */
+			wValue = USB_PORT_FEAT_TEST;
+			typeReq = SetPortFeature;
+			wIndex = 1;
+
+			switch (idProduct) {
+			case USB_OTG_TEST_SE0_NAK_PID:
+				wIndex |= USB_OTG_TEST_SE0_NAK << 8;
+				set_feature = 1;
+				break;
+			case USB_OTG_TEST_J_PID:
+				wIndex |= USB_OTG_TEST_J << 8;
+				set_feature = 1;
+				break;
+			case USB_OTG_TEST_K_PID:
+				wIndex |= USB_OTG_TEST_K << 8;
+				set_feature = 1;
+				break;
+			case USB_OTG_TEST_PACKET_PID:
+				wIndex |= USB_OTG_TEST_PACKET << 8;
+				set_feature = 1;
+				break;
+			case USB_OTG_TEST_HS_HOST_PORT_SUSPEND_RESUME_PID:
+			/* Sleep for 15 sec. Suspend
+			 * for 15 Sec, Then Resume
+			 */
+				ssleep(15);
+
+				err = usb_port_suspend(udev,
+						PMSG_SUSPEND);
+				if (err < 0) {
+					dev_err(&udev->dev, "OTG TEST_MODE:"
+						"Suspend Fail, %d\n", err);
+					goto loop_disable;
+				}
+					ssleep(15);
+				err = usb_port_resume(udev, PMSG_RESUME);
+				if (err < 0) {
+					dev_err(&udev->dev,
+					"can't resume for"
+					"OTG TEST_MODE: %d\n", err);
+					goto loop_disable;
+				}
+				break;
+			case USB_OTG_TEST_SINGLE_STEP_GET_DEV_DESC_PID:
+			/* Sleep for 15 Sec. Issue the GetDeviceDescriptor */
+				ssleep(15);
+				err = usb_get_device_descriptor(udev,
+						sizeof(udev->descriptor));
+				if (err < 0) {
+					dev_err(&udev->dev, "can't re-read"
+					"device descriptor for "
+					"OTG TEST MODE: %d\n", err);
+					goto loop_disable;
+				}
+				break;
+			case USB_OTG_TEST_SINGLE_STEP_GET_DEV_DESC_DATA_PID:
+			/* Issue GetDeviceDescriptor, Sleep for 15 Sec. */
+				err = usb_get_device_descriptor(udev,
+						sizeof(udev->descriptor));
+				if (err < 0) {
+					dev_err(&udev->dev, "can't re-read"
+					"device descriptor for "
+					"OTG TEST MODE: %d\n", err);
+					goto loop_disable;
+				}
+				ssleep(15);
+				break;
+			case USB_OTG_PET_TEST_HNP:
+				/* PET test device */
+				dev_dbg(&udev->dev, "PET Test device\n");
+				break;
+			default:
+			/* is_targeted() will take care for wrong PID */
+				dev_dbg(&udev->dev, "OTG TEST_MODE:Wrong"
+							"PID %d\n", idProduct);
+				break;
+			}
+
+			if (set_feature) {
+				err = hcd->driver->hub_control(hcd,
+					typeReq, wValue, wIndex,
+					NULL, 0);
+			}
+	}
+
+#endif
 		return;
 
 loop_disable:
@@ -4062,6 +4332,16 @@ static int usb_reset_and_verify_device(struct usb_device *udev)
 		goto re_enumerate;
   	}
 	mutex_unlock(hcd->bandwidth_mutex);
+
+#ifdef CONFIG_USB_OTG_20
+	ret = usb_control_msg(udev,
+		usb_sndctrlpipe(udev, 0),
+		USB_REQ_SET_FEATURE, 0,
+			USB_DEVICE_A_HNP_SUPPORT,
+		0, NULL, 0, USB_CTRL_SET_TIMEOUT);
+	if (ret < 0)
+		dev_err(&udev->dev, "set feature error\n");
+#endif
 	usb_set_device_state(udev, USB_STATE_CONFIGURED);
 
 	/* Put interfaces back into the same altsettings as before.

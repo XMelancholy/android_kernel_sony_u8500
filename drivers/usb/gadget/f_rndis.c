@@ -17,7 +17,7 @@
 
 #include <linux/slab.h>
 #include <linux/kernel.h>
-#include <linux/device.h>
+#include <linux/platform_device.h>
 #include <linux/etherdevice.h>
 
 #include <linux/atomic.h>
@@ -176,8 +176,8 @@ rndis_iad_descriptor = {
 	.bFirstInterface =	0, /* XXX, hardcoded */
 	.bInterfaceCount = 	2,	// control + data
 	.bFunctionClass =	USB_CLASS_COMM,
-	.bFunctionSubClass =	USB_CDC_SUBCLASS_ETHERNET,
-	.bFunctionProtocol =	USB_CDC_PROTO_NONE,
+	.bFunctionSubClass =	USB_CDC_SUBCLASS_ACM,
+	.bFunctionProtocol =	USB_CDC_ACM_PROTO_VENDOR,
 	/* .iFunction = DYNAMIC */
 };
 

@@ -138,8 +138,21 @@ ep_matches (
 	 * If the protocol driver hasn't yet decided on wMaxPacketSize
 	 * and wants to know the maximum possible, provide the info.
 	 */
-	if (desc->wMaxPacketSize == 0)
-		desc->wMaxPacketSize = cpu_to_le16(ep->maxpacket);
+#if defined(CONFIG_ARCH_U8500)
+	if (desc->wMaxPacketSize == 0) {
+		switch (type) {
+		case USB_ENDPOINT_XFER_INT:
+			desc->wMaxPacketSize = 32;
+			break;
+		case USB_ENDPOINT_XFER_BULK:
+			desc->wMaxPacketSize = 512;
+			break;
+		default:
+			desc->wMaxPacketSize = cpu_to_le16(ep->maxpacket);
+			break;
+		}
+	}
+#endif
 
 	/* endpoint maxpacket size is an input parameter, except for bulk
 	 * where it's an output parameter representing the full speed limit.
@@ -152,7 +165,9 @@ ep_matches (
 		if (!gadget_is_dualspeed(gadget) && max > 64)
 			return 0;
 		/* FALLTHROUGH */
-
+#if defined(CONFIG_ARCH_U8500)
+	case USB_ENDPOINT_XFER_BULK:
+#endif
 	case USB_ENDPOINT_XFER_ISOC:
 		/* ISO:  limit 1023 bytes full speed, 1024 high/super speed */
 		if (ep->maxpacket < max)
@@ -313,6 +328,12 @@ struct usb_ep *usb_ep_autoconfig_ss(
 		if (ep && ep_matches(gadget, ep, desc, ep_comp))
 			goto found_ep;
 #endif
+	}
+
+	if (gadget->ops->configure_ep) {
+		ep = gadget->ops->configure_ep(gadget, type, desc);
+		if (ep && ep_matches(gadget, ep, desc, ep_comp))
+			goto found_ep;
 	}
 
 	/* Second, look at endpoints until an unclaimed one looks usable */
