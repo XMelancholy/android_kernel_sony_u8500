@@ -58,3 +58,4 @@ obj-$(CONFIG_PHONE)		+= telephony/
 obj-$(CONFIG_RAMSTER)		+= ramster/
 obj-$(CONFIG_USB_WPAN_HCD)	+= ozwpan/
 obj-$(CONFIG_AB5500_SIM)	+= ab5500_sim/
+obj-$(CONFIG_U8500_FLASH)	+= camera_flash/
