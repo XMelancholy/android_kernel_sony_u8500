@@ -22,7 +22,11 @@
 /* 
  * Timeout for stopping processes
  */
+#ifndef CONFIG_SEMC_FREEZE_TIMEOUT
 #define TIMEOUT	(20 * HZ)
+#else
+#define TIMEOUT (CONFIG_SEMC_FREEZE_TIMEOUT * HZ)
+#endif
 
 static int try_to_freeze_tasks(bool user_only)
 {
